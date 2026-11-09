@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Поездки на человека в год — Краснодарский край, 2025</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Neucha&family=PT+Mono&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root{
+    --emerald:#2fe3a6;
+    --emerald-dim:#0b5f49;
+    --ink:#cfe8dc;
+    --ink-dim:#7fa393;
+    --bg:#0a0d0c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
+    font-family:'PT Mono',monospace;}
+  #map{position:absolute;inset:0;background:var(--bg);}
+
+  /* ---- атмосферные слои (ШХД: Зима) ---- */
+  .grain{position:fixed;inset:-40px;pointer-events:none;z-index:100;opacity:.09;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='280'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    animation:grain 1.1s steps(4) infinite;}
+  @keyframes grain{
+    0%{transform:translate(0,0)}25%{transform:translate(-14px,9px)}
+    50%{transform:translate(10px,-12px)}75%{transform:translate(-8px,-7px)}
+    100%{transform:translate(0,0)}}
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:99;
+    box-shadow:inset 0 0 220px 70px rgba(0,0,0,.82);}
+  .scanlines{position:fixed;inset:0;pointer-events:none;z-index:98;opacity:.10;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.5) 0 1px,transparent 1px 3px);}
+
+  /* ---- шапка ---- */
+  header{position:fixed;top:18px;left:20px;z-index:40;pointer-events:none;user-select:none;}
+  header h1{margin:0;max-width:760px;font-size:34px;font-weight:700;letter-spacing:.5px;
+    line-height:1.3;color:#f2fbf6;
+    text-shadow:0 2px 12px rgba(0,0,0,.95);}
+  header .hint{margin-top:9px;font-size:11px;color:var(--ink-dim);opacity:.75;letter-spacing:1px;}
+
+  /* ---- панель справа сверху ---- */
+  .topright{position:fixed;top:18px;right:20px;z-index:40;text-align:right;}
+  .stats{font-size:11px;color:var(--ink-dim);letter-spacing:1px;margin-bottom:8px;}
+  .stats b{color:var(--ink);font-weight:400;}
+  #reset{font-family:'PT Mono',monospace;font-size:11px;letter-spacing:1px;cursor:pointer;
+    color:var(--emerald);background:rgba(8,14,12,.85);border:1px solid rgba(47,227,166,.35);
+    padding:6px 12px;transition:background .15s;}
+  #reset:hover{background:rgba(14,34,27,.9);}
+
+  /* ---- легенда ---- */
+  .legend{position:fixed;left:20px;bottom:18px;z-index:40;max-width:330px;
+    background:rgba(6,10,9,.85);border:1px solid rgba(47,227,166,.18);
+    padding:14px 16px 12px;color:#9fb8ac;font-size:11px;line-height:1.5;
+    backdrop-filter:blur(2px);}
+  .legend .lt{color:var(--ink);letter-spacing:2px;font-size:10px;margin:10px 0 6px;}
+  .legend .lt:first-child{margin-top:0;}
+  .sizes{display:flex;align-items:flex-end;gap:14px;}
+  .sizes .sz{display:flex;flex-direction:column;align-items:center;gap:3px;color:#748c81;font-size:10px;}
+  .glowbar{height:10px;border:1px solid rgba(47,227,166,.3);
+    background:linear-gradient(90deg,rgba(11,95,73,.12),#0b5f49 30%,#2fe3a6 75%,#b9ffe3);}
+  .glowlbl{display:flex;justify-content:space-between;margin-top:3px;font-size:10px;color:#748c81;}
+  .nodata-row{display:flex;align-items:center;gap:8px;margin-top:9px;color:#748c81;font-size:10px;}
+  .foot{margin-top:9px;font-size:10px;color:#5c7168;font-style:normal;}
+  .foot .neu{font-family:'Neucha',cursive;color:#6fae94;font-size:13px;}
+
+  /* ---- маркеры-рули ---- */
+  .wheel{position:absolute;cursor:pointer;transform-origin:center;}
+  .wheel svg{display:block;width:100%;height:100%;transition:transform .18s ease;overflow:visible;}
+  .wheel:hover svg{transform:scale(1.14);}
+  .wheel .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:5px;
+    white-space:nowrap;font:11px 'PT Mono',monospace;color:#d7efe4;letter-spacing:.5px;
+    background:rgba(8,12,11,.9);border:1px solid rgba(47,227,166,.3);
+    padding:4px 9px;opacity:0;transition:opacity .15s;pointer-events:none;z-index:5;}
+  .wheel .lbl .v{color:var(--emerald);}
+  .wheel:hover .lbl{opacity:1;}
+  .wheel.nodata{opacity:.62;filter:saturate(.15) brightness(1.05);}
+  .wheel.nodata:hover{opacity:.9;}
+  @keyframes pulseGlow{0%,100%{opacity:.55}50%{opacity:1}}
+  .g-pulse{animation:pulseGlow 2.8s ease-in-out infinite;}
+
+  /* ---- попап: советская остановка ---- */
+  .maplibregl-popup{z-index:60;}
+  .maplibregl-popup-content{padding:0;background:transparent;box-shadow:none;border-radius:0;}
+  .maplibregl-popup-tip{display:none;}
+  .stop{width:308px;position:relative;font-family:'PT Mono',monospace;filter:drop-shadow(0 18px 30px rgba(0,0,0,.65));}
+  .stop .roof{height:24px;border-top:5px solid #31383b;border-bottom:3px solid #14181a;
+    background:repeating-linear-gradient(90deg,#262c2f 0 9px,#1a1f21 9px 18px);
+    margin:0 -12px;transform:translateY(7px);z-index:2;position:relative;
+    box-shadow:0 8px 14px rgba(0,0,0,.5);}
+  .stop .panel{background:linear-gradient(#242a2c,#171c1e);border:2px solid #30383b;
+    border-top:none;padding:24px 14px 12px;position:relative;}
+  .stop .panel::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background:repeating-linear-gradient(90deg,transparent 0 26px,rgba(0,0,0,.22) 26px 28px);}
+  .stop .legs{display:flex;justify-content:space-between;padding:0 26px;}
+  .stop .legs i{display:block;width:9px;height:16px;background:linear-gradient(#22282a,#0f1315);}
+  .poster{position:relative;background:linear-gradient(160deg,#e9e2cb,#d9d0b4 60%,#cfc5a6);
+    color:#2b2720;font-family:'Neucha',cursive;padding:9px 13px 11px;margin:10px 4px;
+    box-shadow:2px 5px 9px rgba(0,0,0,.5);border-radius:2px;}
+  .poster::before{content:'';position:absolute;top:-9px;left:50%;transform:translateX(-50%) rotate(-2.5deg);
+    width:74px;height:17px;background:rgba(235,240,235,.16);border-left:1px solid rgba(255,255,255,.1);
+    border-right:1px solid rgba(255,255,255,.1);}
+  .poster.pl1{transform:rotate(-1.8deg);}
+  .poster.pl2{transform:rotate(1.4deg);}
+  .poster .pp-h{font-size:14px;letter-spacing:3px;text-transform:uppercase;color:#8a4a2f;opacity:.85;}
+  .poster .pp-name{font-size:27px;line-height:1.05;margin:2px 0 1px;}
+  .poster .pp-sub{font-size:14px;color:#6d6353;}
+  .poster .row{display:flex;justify-content:space-between;gap:10px;font-size:16px;line-height:1.5;}
+  .poster .row .k{color:#544c3e;}
+  .poster .row .v{color:#0e6a4f;white-space:nowrap;}
+  .poster .row.hl{font-size:19px;}
+  .poster .row.hl .v{border-bottom:2px solid rgba(14,106,79,.6);}
+  .poster .none{color:#a3543a;}
+  .graffiti{font-family:'Neucha',cursive;font-size:13px;color:rgba(233,226,203,.55);
+    transform:rotate(-2.4deg);text-align:right;padding:2px 10px 4px;}
+  .cls{position:absolute;top:10px;right:10px;z-index:5;width:24px;height:24px;cursor:pointer;
+    color:#9fb8ac;background:rgba(10,14,13,.9);border:1px solid rgba(47,227,166,.3);
+    font:13px 'PT Mono',monospace;line-height:1;padding:0;}
+  .cls:hover{color:var(--emerald);}
+
+  /* ---- атрибуция ---- */
+  .maplibregl-ctrl-attrib{background:rgba(6,10,9,.8)!important;color:#5c7168!important;
+    font:10px 'PT Mono',monospace;}
+  .maplibregl-ctrl-attrib a{color:#748c81!important;}
+
+  @media (max-width:640px){
+    header h1{font-size:14px}
+    .legend{max-width:250px;font-size:10px;padding:10px}
+    .topright{top:auto;bottom:200px}
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<header>
+  <h1>Сколько раз за год жители Краснодарского края садятся в автобус</h1>
+  <div class="hint">▸ нажмите на руль — остановка с плакатами</div>
+</header>
+
+<div class="topright">
+  <div class="stats" id="stats"></div>
+  <button id="reset">⟲ весь край</button>
+</div>
+
+<div class="legend">
+  <div class="lt">РАЗМЕР РУЛЯ — НАСЕЛЕНИЕ</div>
+  <div class="sizes" id="legSizes"></div>
+  <div class="lt">СВЕЧЕНИЕ — ПОЕЗДОК / ЧЕЛОВЕК В ГОД</div>
+  <div class="glowbar"></div>
+  <div class="glowlbl"><span>0</span><span id="legMax"></span></div>
+  <div class="foot" id="legFoot"></div>
+</div>
+
+<div class="grain"></div>
+<div class="vignette"></div>
+<div class="scanlines"></div>
+
+<script>
+let DATA = [{"name":"Борисовка","type":"село","pop":3188.0,"lat":44.75517652200006,"lon":37.69424798100005,"buses":21.0,"pass":2466.5,"trips":77.36825595984943},{"name":"Семигорский","type":"хутор","pop":400.0,"lat":44.88251437200007,"lon":37.60527312000005,"buses":4.0,"pass":107.5,"trips":268.75},{"name":"Краснодар","type":"город","pop":918145.0,"lat":45.03547166900007,"lon":38.97531518200003,"buses":1206.0,"pass":87929.09,"trips":95.76819565537033},{"name":"Раевская","type":"станица","pop":10020.0,"lat":44.83628295800003,"lon":37.54969185200008,"buses":21.0,"pass":831.6,"trips":82.9940119760479},{"name":"Голубицкая","type":"станица","pop":5570.0,"lat":45.32331798900003,"lon":37.27495819900003,"buses":10.0,"pass":435.5,"trips":78.1867145421903},{"name":"Новороссийск","type":"город","pop":275197.0,"lat":44.72377252300003,"lon":37.76880947300003,"buses":449.0,"pass":20754.16,"trips":75.41564769964789},{"name":"Абрау-Дюрсо","type":"село","pop":3519.0,"lat":44.69862348800007,"lon":37.60302867500008,"buses":8.0,"pass":261.0,"trips":74.16879795396419},{"name":"Туапсе","type":"город","pop":61180.0,"lat":44.09464322200006,"lon":39.07309771800004,"buses":89.0,"pass":4427.11,"trips":72.36204642039883},{"name":"Анапа","type":"город","pop":75865.0,"lat":44.89496496000004,"lon":37.31617741700006,"buses":260.0,"pass":5112.51,"trips":67.38957358465696},{"name":"Мысхако","type":"село","pop":7954.0,"lat":44.65729526000007,"lon":37.76052452000005,"buses":12.0,"pass":515.1,"trips":64.75986924817701},{"name":"Апшеронск","type":"город","pop":39762.0,"lat":44.46539911900004,"lon":39.72678523100006,"buses":61.0,"pass":1912.33,"trips":48.09441174991198},{"name":"Фастовецкая","type":"станица","pop":8700.0,"lat":45.91723689400004,"lon":40.15219907900007,"buses":7.0,"pass":359.64,"trips":41.33793103448276},{"name":"Гайдук","type":"село","pop":7484.0,"lat":44.78376324900007,"lon":37.69916385000005,"buses":6.0,"pass":296.5,"trips":39.61785141635489},{"name":"Славянск-на-Кубани","type":"город","pop":67919.0,"lat":45.26032972600007,"lon":38.12822320300006,"buses":50.0,"pass":2525.95,"trips":37.19062412579691},{"name":"Курганинск","type":"город","pop":48689.0,"lat":44.88764678600006,"lon":40.59137149000003,"buses":52.0,"pass":1435.66,"trips":29.48633161494383},{"name":"Новотитаровская","type":"станица","pop":24754.0,"lat":45.23654820300004,"lon":38.97176800600005,"buses":75.0,"pass":713.7,"trips":28.83170396703563},{"name":"Кропоткин","type":"город","pop":78631.0,"lat":45.43469233600007,"lon":40.57599899300004,"buses":73.0,"pass":2162.6,"trips":27.50314761353665},{"name":"Приморско-Ахтарск","type":"город","pop":32048.0,"lat":46.04350736400005,"lon":38.17765185500008,"buses":42.0,"pass":846.24,"trips":26.4053919121318},{"name":"Крымск","type":"город","pop":57927.0,"lat":44.93543180200004,"lon":37.98792613200004,"buses":50.0,"pass":1468.86,"trips":25.3570873685846},{"name":"Лабинск","type":"город","pop":60164.0,"lat":44.63571639800006,"lon":40.72357706200006,"buses":74.0,"pass":1494.5,"trips":24.84043614121401},{"name":"Абинск","type":"город","pop":39058.0,"lat":44.86626065300004,"lon":38.15116890200004,"buses":22.0,"pass":920.18,"trips":23.5593220338983},{"name":"Армавир","type":"город","pop":190709.0,"lat":44.99765546100008,"lon":41.12964662100006,"buses":289.0,"pass":4462.58,"trips":23.39994441793518},{"name":"Белореченск","type":"город","pop":51590.0,"lat":44.76601525800004,"lon":39.86848939600003,"buses":null,"pass":1134.02,"trips":21.98139174258577},{"name":"Темрюк","type":"город","pop":41413.0,"lat":45.28204644100003,"lon":37.36538557600005,"buses":41.0,"pass":836.8,"trips":20.20621543959626},{"name":"Тихорецк","type":"город","pop":57098.0,"lat":45.85278180900008,"lon":40.12316849400003,"buses":46.0,"pass":1110.52,"trips":19.44936775368664},{"name":"Ильский","type":"посёлок_городского_типа","pop":25502.0,"lat":44.83594309500006,"lon":38.56199949600006,"buses":18.0,"pass":436.7,"trips":17.12414712571563},{"name":"Каневская","type":"станица","pop":44386.0,"lat":46.08480547100004,"lon":38.97195102600006,"buses":42.0,"pass":700.5,"trips":15.78200333438472},{"name":"Северская","type":"станица","pop":22500.0,"lat":44.85376168600004,"lon":38.68194263400004,"buses":38.0,"pass":267.3,"trips":11.88},{"name":"Новопокровская","type":"станица","pop":19100.0,"lat":45.95382928400005,"lon":40.70700853900007,"buses":9.0,"pass":164.51,"trips":8.613089005235603},{"name":"Елизаветинская","type":"станица","pop":24755.0,"lat":45.04843247500003,"lon":38.79990137400006,"buses":15.0,"pass":110.34,"trips":4.457281357301556},{"name":"Псебе","type":"аул","pop":530.0,"lat":44.28590791600004,"lon":38.95421921000008,"buses":null,"pass":null,"trips":null},{"name":"Геленджик","type":"город","pop":76783.0,"lat":44.56101059700006,"lon":38.07711747600007,"buses":null,"pass":null,"trips":null},{"name":"Горячий Ключ","type":"город","pop":40299.0,"lat":44.63424708100007,"lon":39.13642878600007,"buses":null,"pass":null,"trips":null},{"name":"Ейск","type":"город","pop":83094.0,"lat":46.71194140300003,"lon":38.27265759900007,"buses":null,"pass":null,"trips":null},{"name":"Кореновск","type":"город","pop":42019.0,"lat":45.46274323300003,"lon":39.44803785800008,"buses":null,"pass":null,"trips":null},{"name":"Новокубанск","type":"город","pop":35287.0,"lat":45.10379761600007,"lon":41.04393290100006,"buses":null,"pass":null,"trips":null},{"name":"Сочи","type":"город","pop":443562.0,"lat":43.58547514500003,"lon":39.72309522300003,"buses":null,"pass":null,"trips":null},{"name":"Тимашевск","type":"город","pop":50792.0,"lat":45.61420253400007,"lon":38.93396989600006,"buses":72.0,"pass":null,"trips":null},{"name":"Хадыженск","type":"город","pop":22468.0,"lat":44.42280476800005,"lon":39.53732771800003,"buses":null,"pass":null,"trips":null},{"name":"Большевик","type":"посёлок","pop":300.0,"lat":46.51466563000008,"lon":38.23424861800004,"buses":null,"pass":null,"trips":null},{"name":"Газырь","type":"посёлок","pop":2100.0,"lat":45.74617476400005,"lon":39.93330883100003,"buses":null,"pass":null,"trips":null},{"name":"Знаменский","type":"посёлок","pop":6242.0,"lat":45.05404852700008,"lon":39.15021325200007,"buses":null,"pass":null,"trips":null},{"name":"Индустриальный","type":"посёлок","pop":4785.0,"lat":45.09245112100007,"lon":39.10713536600008,"buses":null,"pass":null,"trips":null},{"name":"Комсомолец","type":"посёлок","pop":2033.0,"lat":46.57925477600003,"lon":38.26147440500006,"buses":null,"pass":null,"trips":null},{"name":"Лазурный","type":"посёлок","pop":2754.0,"lat":45.15261844300005,"lon":39.12728824700002,"buses":null,"pass":null,"trips":null},{"name":"Парковый","type":"посёлок","pop":4500.0,"lat":45.83803316000007,"lon":40.14686825300003,"buses":null,"pass":null,"trips":null},{"name":"Совхозный","type":"посёлок","pop":3900.0,"lat":45.29396497100004,"lon":38.11215919000006,"buses":null,"pass":null,"trips":null},{"name":"Широчанка","type":"посёлок","pop":6025.0,"lat":46.65902803600004,"lon":38.33207965800005,"buses":null,"pass":null,"trips":null},{"name":"Афипский","type":"посёлок_городского_типа","pop":21499.0,"lat":44.90334976100007,"lon":38.84112912000006,"buses":null,"pass":null,"trips":null},{"name":"Ахтырский","type":"посёлок_городского_типа","pop":21067.0,"lat":44.85035809400006,"lon":38.29982924800004,"buses":null,"pass":null,"trips":null},{"name":"Гирей","type":"посёлок_городского_типа","pop":6363.0,"lat":45.40526728900005,"lon":40.66420188000006,"buses":null,"pass":null,"trips":null},{"name":"Мостовской","type":"посёлок_городского_типа","pop":24975.0,"lat":44.41436103900003,"lon":40.79028228300007,"buses":null,"pass":null,"trips":null},{"name":"Нефтегорск","type":"посёлок_городского_типа","pop":4968.0,"lat":44.35368171900006,"lon":39.70427949100008,"buses":null,"pass":null,"trips":null},{"name":"Псебай","type":"посёлок_городского_типа","pop":10533.0,"lat":44.11608088900005,"lon":40.79860060900006,"buses":null,"pass":null,"trips":null},{"name":"Архипо-Осиповка","type":"село","pop":6100.0,"lat":44.37010358300006,"lon":38.53339777500003,"buses":null,"pass":null,"trips":null},{"name":"Белая Глина","type":"село","pop":17800.0,"lat":46.07366965800003,"lon":40.87133077800007,"buses":null,"pass":null,"trips":null},{"name":"Беноково","type":"село","pop":1900.0,"lat":44.41960851600004,"lon":40.67768482700006,"buses":null,"pass":null,"trips":null},{"name":"Благодарное","type":"село","pop":1700.0,"lat":44.49693674400004,"lon":41.54330945200007,"buses":null,"pass":null,"trips":null},{"name":"Варнавинское","type":"село","pop":1200.0,"lat":44.99364646300006,"lon":38.19529810200004,"buses":null,"pass":null,"trips":null},{"name":"Витязево","type":"село","pop":7936.0,"lat":45.00235891800003,"lon":37.28380788400005,"buses":null,"pass":null,"trips":null},{"name":"Гай-Кодзор","type":"село","pop":3662.0,"lat":44.85440078900007,"lon":37.43774288300006,"buses":null,"pass":null,"trips":null},{"name":"Георгиевское","type":"село","pop":1606.0,"lat":44.16281726900007,"lon":39.25423287900004,"buses":null,"pass":null,"trips":null},{"name":"Кирилловка","type":"село","pop":1350.0,"lat":44.76802107300006,"lon":37.72647601800004,"buses":null,"pass":null,"trips":null},{"name":"Михайловское","type":"село","pop":1700.0,"lat":45.00856210200004,"lon":38.50346550100005,"buses":null,"pass":null,"trips":null},{"name":"Навагинское","type":"село","pop":270.0,"lat":44.36695263900003,"lon":39.33808004900004,"buses":null,"pass":null,"trips":null},{"name":"Пластунка","type":"село","pop":2498.0,"lat":43.68249091300004,"lon":39.76101148600003,"buses":null,"pass":null,"trips":null},{"name":"Русское","type":"село","pop":500.0,"lat":44.95988398200006,"lon":37.84022238200003,"buses":null,"pass":null,"trips":null},{"name":"Суворовское","type":"село","pop":2704.0,"lat":45.27711642700007,"lon":39.43476673700007,"buses":null,"pass":null,"trips":null},{"name":"Супсех","type":"село","pop":8744.0,"lat":44.86078796100004,"lon":37.35824208700006,"buses":null,"pass":null,"trips":null},{"name":"Цибанобалка","type":"село","pop":5452.0,"lat":44.97839009300003,"lon":37.33374878700005,"buses":null,"pass":null,"trips":null},{"name":"Цыпка","type":"село","pop":750.0,"lat":44.15759902100007,"lon":39.17782301500006,"buses":null,"pass":null,"trips":null},{"name":"Анапская","type":"станица","pop":18978.0,"lat":44.90034478800004,"lon":37.38129201900006,"buses":null,"pass":null,"trips":null},{"name":"Анастасиевская","type":"станица","pop":11000.0,"lat":45.21563244800006,"lon":37.89477346700005,"buses":null,"pass":null,"trips":null},{"name":"Брюховецкая","type":"станица","pop":22000.0,"lat":45.80200034200004,"lon":38.99729355100004,"buses":null,"pass":null,"trips":null},{"name":"Выселки","type":"станица","pop":20798.0,"lat":45.58004261500002,"lon":39.65541559200005,"buses":null,"pass":null,"trips":null},{"name":"Динская","type":"станица","pop":34100.0,"lat":45.21857886800007,"lon":39.22307091900007,"buses":null,"pass":null,"trips":null},{"name":"Ивановская","type":"станица","pop":9643.0,"lat":45.26941880800007,"lon":38.46520720400008,"buses":null,"pass":null,"trips":null},{"name":"Кабардинская","type":"станица","pop":2300.0,"lat":44.49518901900007,"lon":39.49356168700007,"buses":null,"pass":null,"trips":null},{"name":"Кущевская","type":"станица","pop":23000.0,"lat":46.55695526900007,"lon":39.62210489300004,"buses":null,"pass":null,"trips":null},{"name":"Ленинградская","type":"станица","pop":38200.0,"lat":46.32055133800003,"lon":39.39288827000007,"buses":null,"pass":null,"trips":null},{"name":"Марьянская","type":"станица","pop":11169.0,"lat":45.09899384400006,"lon":38.63621326100008,"buses":null,"pass":null,"trips":null},{"name":"Натухаевская","type":"станица","pop":6922.0,"lat":44.91214149500007,"lon":37.56959004000004,"buses":null,"pass":null,"trips":null},{"name":"Нижнебаканская","type":"станица","pop":8500.0,"lat":44.86654839000005,"lon":37.86664981600006,"buses":null,"pass":null,"trips":null},{"name":"Новоджерелиевская","type":"станица","pop":5300.0,"lat":45.77449500100005,"lon":38.67127694100003,"buses":null,"pass":null,"trips":null},{"name":"Новомалороссийская","type":"станица","pop":7000.0,"lat":45.63789995500008,"lon":39.89716465300006,"buses":null,"pass":null,"trips":null},{"name":"Павловская","type":"станица","pop":30700.0,"lat":46.13053995300004,"lon":39.79096826700004,"buses":null,"pass":null,"trips":null},{"name":"Полтавская","type":"станица","pop":26365.0,"lat":45.36680348900006,"lon":38.21147221500007,"buses":null,"pass":null,"trips":null},{"name":"Роговская","type":"станица","pop":8300.0,"lat":45.73294802200007,"lon":38.73495704000004,"buses":null,"pass":null,"trips":null},{"name":"Саратовская","type":"станица","pop":6000.0,"lat":44.70714949700005,"lon":39.23014915400007,"buses":null,"pass":null,"trips":null},{"name":"Советская","type":"станица","pop":10000.0,"lat":44.78305776300004,"lon":41.17025237200005,"buses":null,"pass":null,"trips":null},{"name":"Старотитаровская","type":"станица","pop":12200.0,"lat":45.22469757500005,"lon":37.15951473800004,"buses":null,"pass":null,"trips":null},{"name":"Тамань","type":"станица","pop":11672.0,"lat":45.21561150200006,"lon":36.71841685900006,"buses":null,"pass":null,"trips":null},{"name":"Тбилисская","type":"станица","pop":24100.0,"lat":45.36452813900007,"lon":40.20177066900004,"buses":null,"pass":null,"trips":null},{"name":"Холмская","type":"станица","pop":17300.0,"lat":44.84804441800003,"lon":38.38923227100003,"buses":null,"pass":null,"trips":null},{"name":"Шкуринская","type":"станица","pop":4900.0,"lat":46.58205118800004,"lon":39.36484285400007,"buses":null,"pass":null,"trips":null},{"name":"Бараниковский","type":"хутор","pop":2700.0,"lat":45.33951188000003,"lon":38.01787851000007,"buses":null,"pass":null,"trips":null},{"name":"Даманка","type":"хутор","pop":850.0,"lat":44.97066324300005,"lon":37.78885612500004,"buses":null,"pass":null,"trips":null},{"name":"Киновия","type":"хутор","pop":360.0,"lat":45.90786766900004,"lon":38.93018916900007,"buses":null,"pass":null,"trips":null},{"name":"Новоукраинский","type":"хутор","pop":3500.0,"lat":44.89401012400003,"lon":38.04481460000004,"buses":null,"pass":null,"trips":null},{"name":"Павловский","type":"хутор","pop":1000.0,"lat":45.07394173500006,"lon":37.77261729300005,"buses":null,"pass":null,"trips":null},{"name":"Терзиян","type":"хутор","pop":290.0,"lat":44.21072570000007,"lon":39.42795988500006,"buses":null,"pass":null,"trips":null},{"name":"Упорный","type":"хутор","pop":1100.0,"lat":46.14542244900008,"lon":39.98312758300005,"buses":null,"pass":null,"trips":null}];
+DATA.sort((a,b)=>(b.pop||0)-(a.pop||0)); // крупные — нижним слоем, мелкие сверху
+const ALL_NP = DATA.length;
+DATA = DATA.filter(d => d.trips != null); // на карте — только НП с данными о поездках
+
+/* ---------- шкалы ---------- */
+const POP_MIN = Math.min(...DATA.map(d=>d.pop||Infinity));
+const POP_MAX = Math.max(...DATA.map(d=>d.pop||0));
+const MAXTRIPS = Math.max(...DATA.map(d=>d.trips||0));
+
+function sizeFor(pop){ // диаметр, px
+  if(!pop) return 16;
+  return 17 + 58*Math.sqrt(pop/POP_MAX);
+}
+function fillFor(trips){
+  return trips==null ? 0 : Math.min(1, trips/MAXTRIPS);
+}
+
+/* ---------- руль: объёмное ретро-стекло ---------- */
+function wheelSVG(fill, hasData, i, opts){
+  opts = opts||{};
+  const uid = 'w'+i+'_'+Math.random().toString(36).slice(2,7);
+  const C=60, RO=47, T=8, RI=RO-T/2;          // центр, радиусы обода
+  const liqR = RI-1;
+  const em = hasData;
+  const c = (a)=>`rgba(${em?'47,227,166':'120,135,130'},${a})`;
+  const lvl = C + liqR - fill*liqR*2;          // верх «жидкости»
+  return `
+  <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="${uid}r" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${em?'#1c5a48':'#262d2f'}"/>
+        <stop offset=".45" stop-color="${em?'#0b2019':'#12181a'}"/>
+        <stop offset="1" stop-color="${em?'#173f34':'#22292c'}"/>
+      </linearGradient>
+      <radialGradient id="${uid}g" cx=".5" cy=".62" r=".62">
+        <stop offset="0" stop-color="rgba(124,255,196,.55)"/>
+        <stop offset=".55" stop-color="rgba(35,190,140,.28)"/>
+        <stop offset="1" stop-color="rgba(10,60,45,0)"/>
+      </radialGradient>
+      <linearGradient id="${uid}l" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#8dffd2"/>
+        <stop offset=".22" stop-color="#2fe3a6"/>
+        <stop offset="1" stop-color="#0a6b52"/>
+      </linearGradient>
+      <clipPath id="${uid}c"><circle cx="${C}" cy="${C}" r="${liqR}"/></clipPath>
+    </defs>
+
+    <!-- внутреннее свечение -->
+    ${em?`<circle cx="${C}" cy="${C}" r="${liqR}" fill="url(#${uid}g)"
+        opacity="${(.18+.8*fill).toFixed(2)}" class="g-pulse"/>`:''}
+
+    <!-- «жидкость» — заполняется свечением -->
+    ${em && fill>0.02 ? `
+    <g clip-path="url(#${uid}c)">
+      <rect x="${C-liqR}" y="${lvl}" width="${liqR*2}" height="${C+liqR-lvl}" fill="url(#${uid}l)" opacity=".9"/>
+      <ellipse cx="${C}" cy="${lvl}" rx="${liqR}" ry="2.6" fill="#b9ffe3" opacity=".95"/>
+      <ellipse cx="${C}" cy="${lvl}" rx="${liqR*.7}" ry="6" fill="#b9ffe3" opacity=".25"/>
+    </g>`:''}
+
+    <!-- три спицы: влево, вправо, вниз -->
+    <g fill="${em?'url(#'+uid+'r)':'#1c2224'}" stroke="${c(.5)}" stroke-width="1">
+      <rect x="17" y="${C-3.2}" width="36" height="6.4" rx="3.2"/>
+      <rect x="${C+7}" y="${C-3.2}" width="36" height="6.4" rx="3.2"/>
+      <rect x="${C-3.2}" y="${C+7}" width="6.4" height="26" rx="3.2"/>
+    </g>
+
+    <!-- обод: объёмное стекло -->
+    <circle cx="${C}" cy="${C}" r="${RO}" fill="none" stroke="url(#${uid}r)" stroke-width="${T}"/>
+    <circle cx="${C}" cy="${C}" r="${RO+T/2-.5}" fill="none" stroke="rgba(0,0,0,.6)" stroke-width="1"/>
+    <circle cx="${C}" cy="${C}" r="${RI}" fill="none" stroke="${c(em?(.2+.75*fill):.25)}" stroke-width="${em?(.8+1.6*fill).toFixed(2):1}"/>
+
+    <!-- блики на стекле -->
+    <path d="M 15.8 43.9 A ${RO} ${RO} 0 0 1 68.2 13.7" fill="none"
+      stroke="rgba(215,255,238,.4)" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M 104.2 76.1 A ${RO} ${RO} 0 0 1 83.5 100.7" fill="none"
+      stroke="rgba(0,0,0,.45)" stroke-width="3.4" stroke-linecap="round"/>
+
+    <!-- ступица + кнопка гудка -->
+    <circle cx="${C}" cy="${C}" r="9" fill="${em?'url(#'+uid+'r)':'#1c2224'}" stroke="${c(.6)}" stroke-width="1.4"/>
+    <circle cx="${C}" cy="${C}" r="3.2" fill="${em?'#2fe3a6':'#3a4240'}" opacity="${em?(.35+.65*fill).toFixed(2):1}"/>
+  </svg>`;
+}
+
+/* ---------- форматирование ---------- */
+const fmtInt = x => x==null ? null : Math.round(x).toLocaleString('ru-RU');
+const fmt1   = x => x==null ? null : x.toLocaleString('ru-RU',{minimumFractionDigits:1,maximumFractionDigits:1});
+
+/* ---------- карта ---------- */
+/* Подложка: если задан ключ CARTO (https://carto.com/basemaps/apikey/ — бесплатно,
+   ключ приходит на e-mail), используется Carto Dark Matter; иначе — Esri Dark Gray (без ключа). */
+const CARTO_KEY = ''; // ← вставьте сюда свой ключ, например 'AbCdEf...'
+
+const BASEMAP = CARTO_KEY ? {
+  sources:{
+    carto:{
+      type:'raster',
+      tiles:['https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key='+CARTO_KEY,
+             'https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key='+CARTO_KEY,
+             'https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key='+CARTO_KEY,
+             'https://d.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png?key='+CARTO_KEY],
+      tileSize:256,
+      attribution:'© OpenStreetMap contributors © CARTO'
+    }
+  },
+  layers:[{id:'carto',type:'raster',source:'carto',
+    paint:{'raster-saturation':-.55,'raster-brightness-max':.62}}]
+} : {
+  sources:{
+    esri:{
+        type:'raster',
+        tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
+        tileSize:256,
+        maxzoom:16,
+        attribution:'Esri, HERE, Garmin, FAO, NOAA, USGS · © OpenStreetMap contributors'
+      },
+      esriRef:{
+        type:'raster',
+        tiles:['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'],
+        tileSize:256,
+        maxzoom:16,
+        attribution:'Esri'
+      }
+    },
+    layers:[
+      {id:'esri',type:'raster',source:'esri',paint:{'raster-saturation':-.15,'raster-brightness-max':.72,'raster-contrast':.1}},
+      {id:'esriRef',type:'raster',source:'esriRef',paint:{'raster-opacity':.85,'raster-saturation':-.2,'raster-brightness-max':.8}}
+    ]
+};
+
+const map = new maplibregl.Map({
+  container:'map',
+  style: Object.assign({version:8}, BASEMAP),
+  center:[38.9,45.2],
+  zoom:6.6,
+  maxBounds:[[34.5,41.5],[43.5,48.5]],
+  attributionControl:{compact:true}
+});
+map.getCanvas().style.cursor='default';
+
+const BOUNDS=[[36.5,43.45],[41.35,46.85]];
+map.fitBounds(BOUNDS,{padding:70,duration:0});
+document.getElementById('reset').onclick=()=>map.fitBounds(BOUNDS,{padding:70,duration:600});
+
+/* ---------- попап-остановка ---------- */
+const popup = new maplibregl.Popup({closeButton:false,closeOnClick:true,maxWidth:'320px'});
+
+function stopHTML(d){
+  const tripLine = d.trips!=null
+    ? `<div class="row hl"><span class="k">поездок на человека в год:</span><span class="v">${fmt1(d.trips)}</span></div>`
+    : `<div class="row"><span class="k">поездок на человека в год:</span><span class="v none">данных нет</span></div>`;
+  const popLine  = d.pop  != null ? `<div class="row"><span class="k">население:</span><span class="v">${fmtInt(d.pop)} чел.</span></div>` : '';
+  const busLine  = d.buses!= null ? `<div class="row"><span class="k">автобусов:</span><span class="v">${fmtInt(d.buses)}</span></div>` : '';
+  const passLine = d.pass != null ? `<div class="row"><span class="k">перевезено за год:</span><span class="v">${fmt1(d.pass)} тыс. чел.</span></div>` : '';
+  return `
+  <div class="stop">
+    <button class="cls" title="закрыть">✕</button>
+    <div class="roof"></div>
+    <div class="panel">
+      <div class="poster pl1">
+        <div class="pp-h">остановка</div>
+        <div class="pp-name">${d.name}</div>
+        <div class="pp-sub">${d.type||'населённый пункт'}, Краснодарский край</div>
+      </div>
+      <div class="poster pl2">
+        ${tripLine}
+        ${popLine}${busLine}${passLine}
+      </div>
+      <div class="graffiti">по данным росстата · 2025</div>
+    </div>
+    <div class="legs"><i></i><i></i></div>
+  </div>`;
+}
+
+function openStop(d, el){
+  popup.setLngLat([d.lon,d.lat])
+       .setDOMContent(htmlToDom(stopHTML(d)))
+       .addTo(map);
+  popup._container.querySelector('.cls').onclick=()=>popup.remove();
+  // приподнять карту, чтобы остановка не уехала за экран
+  const off = sizeFor(d.pop)/2 + 40;
+  map.panTo([d.lon,d.lat],{offset:[0,-(off-60)],duration:450});
+}
+function htmlToDom(html){
+  const t=document.createElement('div'); t.innerHTML=html.trim(); return t.firstElementChild;
+}
+
+/* ---------- маркеры ---------- */
+DATA.forEach((d,i)=>{
+  const hasData = d.trips!=null;
+  const size = sizeFor(d.pop);
+  const el = document.createElement('div');
+  el.className = 'wheel'+(hasData?'':' nodata');
+  el.style.width = el.style.height = size+'px';
+  el.style.filter = hasData
+    ? `drop-shadow(0 0 ${(5+16*fillFor(d.trips)).toFixed(0)}px rgba(47,227,166,${(.22+.5*fillFor(d.trips)).toFixed(2)}))`
+    : 'drop-shadow(0 2px 6px rgba(0,0,0,.6))';
+  el.innerHTML = wheelSVG(fillFor(d.trips), hasData, i)
+    + `<div class="lbl">${d.name}${hasData?` · <span class="v">${fmt1(d.trips)}</span>`:''}</div>`;
+  el.addEventListener('click', e=>{e.stopPropagation(); openStop(d, el);});
+  new maplibregl.Marker({element:el, anchor:'center'})
+    .setLngLat([d.lon,d.lat])
+    .addTo(map);
+});
+
+/* ---------- легенда и статистика ---------- */
+const withData = DATA.length;
+document.getElementById('stats').innerHTML =
+  `НП С ДАННЫМИ: <b>${withData}</b> ИЗ ${ALL_NP} В КРАЕ`;
+document.getElementById('legMax').textContent = fmt1(MAXTRIPS);
+document.getElementById('legFoot').innerHTML =
+  `* Борисовка — в данных Росстата опечатка (773,7), запятая сдвинута: исправлено на <span class="neu">77,4 поездки/чел.</span>`;
+
+const legSizes=document.getElementById('legSizes');
+[[1000,'1 тыс.'],[30000,'30 тыс.'],[918145,'918 тыс.']].forEach(([p,lbl],j)=>{
+  const s=sizeFor(p);
+  const w=document.createElement('div'); w.className='sz';
+  w.innerHTML=`<div style="width:${s}px;height:${s}px">${wheelSVG(.45,true,'leg'+j)}</div><span>${lbl}</span>`;
+  legSizes.appendChild(w);
+});
+</script>
+</body>
+</html>
